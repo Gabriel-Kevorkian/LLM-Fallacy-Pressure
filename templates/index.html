@@ -1,0 +1,1977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hallucination Pressure Test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════
+   BASE & VARIABLES
+═══════════════════════════════════════════════════════ */
+:root {
+  --bg:        #0a0c10;
+  --bg2:       #0f1117;
+  --bg3:       #161a24;
+  --border:    #1e2433;
+  --border2:   #2a3347;
+  --text:      #c8d0e0;
+  --text-dim:  #5a6478;
+  --text-mid:  #8892a4;
+  --accent:    #4f8ef7;
+  --accent2:   #7c3aed;
+  --green:     #22d3a0;
+  --red:       #f25a5a;
+  --yellow:    #f5a623;
+  --orange:    #ff6b35;
+  --purple:    #a78bfa;
+  --cyan:      #22d3ee;
+  --magenta:   #e879f9;
+  --subject:   #22d3ee;
+  --reinforcer:#f25a5a;
+  --critic:    #a78bfa;
+  --evaluator: #f5a623;
+  --radius:    8px;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-ui:   'Syne', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scanline overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ═══════════════════════════════════════════════════════
+   TOP BAR
+═══════════════════════════════════════════════════════ */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  height: 48px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.topbar-logo {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.topbar-logo .dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.85); }
+}
+
+.topbar-tabs {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+.tab {
+  padding: 6px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-dim);
+  transition: all 0.15s;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  font-family: var(--font-ui);
+}
+.tab:hover { color: var(--text); background: var(--bg3); }
+.tab.active {
+  color: var(--accent);
+  background: rgba(79,142,247,0.1);
+  border-color: rgba(79,142,247,0.3);
+}
+
+.topbar-spacer { flex: 1; }
+
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: var(--font-ui);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.status-pill.running {
+  color: var(--green);
+  border-color: rgba(34,211,160,0.3);
+  background: rgba(34,211,160,0.08);
+}
+.status-pill.running .sdot { background: var(--green); animation: pulse 1s infinite; }
+.status-pill.idle .sdot { background: var(--text-dim); }
+.sdot { width: 6px; height: 6px; border-radius: 50%; }
+
+/* ═══════════════════════════════════════════════════════
+   MAIN LAYOUT
+═══════════════════════════════════════════════════════ */
+.main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════
+   LEFT SIDEBAR — Config
+═══════════════════════════════════════════════════════ */
+.sidebar {
+  width: 300px;
+  flex-shrink: 0;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-section {
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-header {
+  padding: 10px 16px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  user-select: none;
+}
+
+.sidebar-header:hover { color: var(--text-mid); }
+
+.sidebar-body { padding: 12px 16px; }
+
+.field-group { margin-bottom: 12px; }
+.field-label {
+  display: block;
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-bottom: 5px;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+select, input[type="number"], input[type="text"] {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 7px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+  appearance: none;
+}
+
+select:focus, input:focus { border-color: var(--accent); }
+
+select option { background: var(--bg3); }
+
+.model-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  margin-top: 4px;
+}
+.model-badge.weak { background: rgba(242,90,90,0.1); color: var(--red); border: 1px solid rgba(242,90,90,0.2); }
+.model-badge.strong { background: rgba(79,142,247,0.1); color: var(--accent); border: 1px solid rgba(79,142,247,0.2); }
+
+/* ── Run Button ── */
+.btn-run {
+  width: 100%;
+  padding: 11px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border: none;
+  border-radius: var(--radius);
+  color: #fff;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.btn-run:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(79,142,247,0.3); }
+.btn-run:active { transform: translateY(0); }
+.btn-run:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.btn-run.running { background: linear-gradient(135deg, var(--red), #c0392b); }
+
+/* ── Stats ── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.stat-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  text-align: center;
+}
+
+.stat-value {
+  font-family: var(--font-ui);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 3px;
+}
+.stat-label { font-size: 9px; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; font-family: var(--font-ui); }
+
+/* Progress bar */
+.progress-section { padding: 12px 16px; }
+.progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  font-family: var(--font-ui);
+}
+.progress-track {
+  height: 4px;
+  background: var(--bg3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--green));
+  border-radius: 2px;
+  transition: width 0.5s ease;
+  width: 0%;
+}
+
+/* Question list in sidebar */
+.q-list { padding: 0 16px 12px; overflow-y: auto; max-height: 200px; }
+.q-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--text-mid);
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-bottom: 2px;
+}
+.q-item:hover { background: var(--bg3); color: var(--text); }
+.q-item.active-q { background: rgba(79,142,247,0.1); color: var(--accent); }
+.q-item.done-q.hallucinated { color: var(--red); }
+.q-item.done-q.held { color: var(--green); }
+.q-num { font-size: 9px; color: var(--text-dim); width: 16px; flex-shrink: 0; font-family: var(--font-ui); font-weight: 700; }
+.q-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-badge {
+  font-size: 8px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+.q-badge.easy { background: rgba(34,211,160,0.15); color: var(--green); }
+.q-badge.medium { background: rgba(245,166,35,0.15); color: var(--yellow); }
+.q-badge.hard { background: rgba(242,90,90,0.15); color: var(--red); }
+
+/* ═══════════════════════════════════════════════════════
+   CENTER — Chat Area
+═══════════════════════════════════════════════════════ */
+.chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Question context bar */
+.q-context {
+  padding: 10px 20px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.q-context.hidden { display: none; }
+
+.q-info { flex: 1; min-width: 0; }
+.q-context-label { font-size: 9px; color: var(--text-dim); letter-spacing: 0.12em; text-transform: uppercase; font-family: var(--font-ui); font-weight: 700; margin-bottom: 3px; }
+.q-context-question { font-size: 13px; color: var(--text); font-weight: 500; }
+
+.q-answers {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.answer-pill {
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+.answer-pill.correct { background: rgba(34,211,160,0.1); border: 1px solid rgba(34,211,160,0.25); color: var(--green); }
+.answer-pill.false { background: rgba(242,90,90,0.1); border: 1px solid rgba(242,90,90,0.25); color: var(--red); }
+.answer-pill-label { font-size: 8px; opacity: 0.7; display: block; letter-spacing: 0.08em; font-family: var(--font-ui); font-weight: 700; text-transform: uppercase; margin-bottom: 1px; }
+
+/* Chat messages */
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  scroll-behavior: smooth;
+}
+
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-track { background: transparent; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* Empty state */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-dim);
+  gap: 12px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 48px;
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+.empty-title {
+  font-family: var(--font-ui);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-mid);
+}
+
+.empty-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+  max-width: 300px;
+  line-height: 1.7;
+}
+
+/* ── Message bubbles ── */
+.msg-group {
+  margin-bottom: 6px;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.msg-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.agent-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-family: var(--font-ui);
+}
+.agent-tag.subject  { background: rgba(34,211,238,0.12); color: var(--subject); border: 1px solid rgba(34,211,238,0.2); }
+.agent-tag.reinforcer{ background: rgba(242,90,90,0.12); color: var(--reinforcer); border: 1px solid rgba(242,90,90,0.2); }
+.agent-tag.critic   { background: rgba(167,139,250,0.12); color: var(--critic); border: 1px solid rgba(167,139,250,0.2); }
+.agent-tag.evaluator{ background: rgba(245,166,35,0.12); color: var(--evaluator); border: 1px solid rgba(245,166,35,0.2); }
+
+.turn-badge {
+  font-size: 9px;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+}
+
+.msg-bubble {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--text);
+  position: relative;
+}
+
+.msg-group.subject .msg-bubble  { border-left: 2px solid var(--subject); }
+.msg-group.reinforcer .msg-bubble { border-left: 2px solid var(--reinforcer); }
+.msg-group.critic .msg-bubble   { border-left: 2px solid var(--critic); }
+.msg-group.evaluator .msg-bubble { border-left: 2px solid var(--evaluator); }
+
+/* Evaluation bubbles */
+.eval-bubble {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-top: 4px;
+}
+
+.verdict-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+
+.eval-details { flex: 1; min-width: 0; }
+.eval-verdict {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  margin-bottom: 3px;
+}
+.eval-verdict.HALLUCINATION { color: var(--red); }
+.eval-verdict.PARTIAL_CAPITULATION { color: var(--yellow); }
+.eval-verdict.HELD_GROUND { color: var(--green); }
+
+.eval-reasoning { font-size: 11px; color: var(--text-mid); line-height: 1.5; }
+
+.eval-meta {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.conf-bar-wrap { flex: 1; }
+.conf-bar-label { font-size: 9px; color: var(--text-dim); margin-bottom: 3px; font-family: var(--font-ui); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+.conf-bar {
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.conf-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+.conf-fill.high { background: var(--green); }
+.conf-fill.mid { background: var(--yellow); }
+.conf-fill.low { background: var(--red); }
+
+/* Hallucination banner */
+.hallucination-banner {
+  margin: 8px 0;
+  padding: 12px 16px;
+  background: rgba(242,90,90,0.08);
+  border: 1px solid rgba(242,90,90,0.3);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: flashIn 0.5s ease;
+}
+
+@keyframes flashIn {
+  0% { background: rgba(242,90,90,0.3); }
+  100% { background: rgba(242,90,90,0.08); }
+}
+
+.hallucination-banner .hb-icon { font-size: 20px; }
+.hallucination-banner .hb-text { font-size: 11px; }
+.hallucination-banner .hb-title { font-family: var(--font-ui); font-weight: 800; color: var(--red); font-size: 12px; letter-spacing: 0.05em; margin-bottom: 2px; }
+.hallucination-banner .hb-detail { color: var(--text-mid); }
+
+/* Success (held ground) banner */
+.held-banner {
+  margin: 8px 0;
+  padding: 12px 16px;
+  background: rgba(34,211,160,0.08);
+  border: 1px solid rgba(34,211,160,0.3);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.held-banner .hb-title { color: var(--green); }
+
+/* Tool calls */
+.tool-calls {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  background: rgba(124,58,237,0.1);
+  border: 1px solid rgba(124,58,237,0.2);
+  border-radius: 3px;
+  font-size: 9px;
+  color: var(--purple);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tool-chip:hover { background: rgba(124,58,237,0.2); }
+
+/* Tool detail popover */
+.tool-detail {
+  margin-top: 8px;
+  background: var(--bg);
+  border: 1px solid rgba(124,58,237,0.2);
+  border-radius: 5px;
+  padding: 8px 10px;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  display: none;
+}
+
+/* Question divider */
+.q-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 12px;
+}
+.q-divider-line { flex: 1; height: 1px; background: var(--border); }
+.q-divider-label {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-dim);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding: 3px 8px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* Typing indicator */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: fit-content;
+  margin-bottom: 6px;
+}
+.typing-dots { display: flex; gap: 4px; }
+.typing-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  animation: typingBounce 1.2s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+.typing-label { font-size: 10px; color: var(--text-dim); font-family: var(--font-ui); }
+
+/* ═══════════════════════════════════════════════════════
+   RIGHT PANEL — Session History / Questions Editor
+═══════════════════════════════════════════════════════ */
+.right-panel {
+  width: 320px;
+  flex-shrink: 0;
+  background: var(--bg2);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.panel-tab {
+  flex: 1;
+  padding: 10px;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  font-family: var(--font-ui);
+}
+.panel-tab:hover { color: var(--text-mid); }
+.panel-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.panel-content { flex: 1; overflow: hidden; display: none; }
+.panel-content.active { display: flex; flex-direction: column; }
+
+/* ── Session list ── */
+.session-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+.session-list::-webkit-scrollbar { width: 3px; }
+.session-list::-webkit-scrollbar-thumb { background: var(--border2); }
+
+.session-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+}
+.session-card:hover { border-color: var(--border2); background: #1a1f2e; }
+.session-card.active-session { border-color: rgba(79,142,247,0.4); }
+
+.session-date {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  margin-bottom: 5px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.session-models { font-size: 10px; color: var(--text-mid); margin-bottom: 6px; }
+.session-models span { color: var(--accent); }
+
+.session-stats { display: flex; gap: 8px; }
+.session-stat {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: var(--font-ui);
+  font-weight: 700;
+}
+.session-stat.rate-high { background: rgba(242,90,90,0.12); color: var(--red); }
+.session-stat.rate-low { background: rgba(34,211,160,0.12); color: var(--green); }
+.session-stat.info { background: var(--bg); color: var(--text-dim); }
+
+.session-delete {
+  position: absolute;
+  top: 8px; right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+  border-radius: 3px;
+  transition: all 0.15s;
+  opacity: 0;
+}
+.session-card:hover .session-delete { opacity: 1; }
+.session-delete:hover { color: var(--red); background: rgba(242,90,90,0.1); }
+
+.session-actions {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-sm {
+  flex: 1;
+  padding: 8px;
+  border-radius: 6px;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text-mid);
+  transition: all 0.15s;
+  text-align: center;
+}
+.btn-sm:hover { border-color: var(--border2); color: var(--text); }
+.btn-sm.primary { background: rgba(79,142,247,0.1); border-color: rgba(79,142,247,0.3); color: var(--accent); }
+.btn-sm.primary:hover { background: rgba(79,142,247,0.2); }
+
+/* ── Questions editor ── */
+.questions-editor {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+.questions-editor::-webkit-scrollbar { width: 3px; }
+.questions-editor::-webkit-scrollbar-thumb { background: var(--border2); }
+
+.q-editor-item {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.q-editor-item:hover { border-color: var(--border2); }
+.q-editor-item.selected { border-color: rgba(79,142,247,0.4); }
+
+.q-editor-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  cursor: pointer;
+  gap: 8px;
+}
+
+.q-editor-check {
+  width: 14px; height: 14px;
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  background: transparent;
+}
+.q-editor-check.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.q-editor-check.checked::after { content: '✓'; font-size: 9px; color: #fff; }
+
+.q-editor-title {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.q-editor-expand { color: var(--text-dim); font-size: 10px; flex-shrink: 0; transition: transform 0.2s; }
+.q-editor-item.open .q-editor-expand { transform: rotate(180deg); }
+
+.q-editor-body {
+  padding: 0 10px 10px;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+}
+.q-editor-item.open .q-editor-body { display: flex; }
+
+.q-editor-body label { font-size: 9px; color: var(--text-dim); font-family: var(--font-ui); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
+.q-editor-body textarea, .q-editor-body input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 8px;
+  resize: vertical;
+  min-height: 40px;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+.q-editor-body textarea:focus, .q-editor-body input:focus { border-color: var(--accent); }
+
+.q-editor-actions {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Add question form */
+.add-q-form {
+  background: var(--bg3);
+  border: 1px dashed var(--border2);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 10px;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+}
+.add-q-form.open { display: flex; }
+.add-q-form label { font-size: 9px; color: var(--text-dim); font-family: var(--font-ui); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; display: block; margin-bottom: 3px; }
+.add-q-form textarea, .add-q-form input, .add-q-form select { width: 100%; }
+
+/* ── Session detail view ── */
+.session-detail {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: none;
+}
+.session-detail.active { display: block; }
+.session-list.hidden { display: none; }
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--accent);
+  cursor: pointer;
+  margin-bottom: 12px;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.back-btn:hover { color: var(--text); }
+
+.session-detail-summary {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.session-q-results { display: flex; flex-direction: column; gap: 6px; }
+.session-q-result {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+.session-q-result-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.session-q-result-question { color: var(--text-mid); font-size: 11px; }
+
+/* ═══════════════════════════════════════════════════════
+   SCROLLBAR GLOBAL
+═══════════════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* ═══════════════════════════════════════════════════════
+   MODALS
+═══════════════════════════════════════════════════════ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+.modal-box {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 400px;
+  max-width: 560px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.modal-title { font-family: var(--font-ui); font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 16px; }
+.modal-close {
+  float: right;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  cursor: pointer;
+  margin-top: -4px;
+}
+.modal-close:hover { color: var(--text); }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 10px 16px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text);
+  z-index: 2000;
+  animation: slideUp 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+.toast.success { border-color: rgba(34,211,160,0.4); color: var(--green); }
+.toast.error { border-color: rgba(242,90,90,0.4); color: var(--red); }
+@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* Confidence chart mini */
+.mini-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 28px;
+  margin-top: 6px;
+}
+.mini-bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  transition: height 0.3s ease;
+  min-height: 2px;
+}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-logo">
+    <div class="dot"></div>
+    HPT Lab
+  </div>
+  <div class="topbar-tabs">
+    <div class="tab active" data-view="experiment">Experiment</div>
+    <div class="tab" data-view="about">About</div>
+  </div>
+  <div class="topbar-spacer"></div>
+  <div class="status-pill idle" id="statusPill">
+    <div class="sdot"></div>
+    <span id="statusText">IDLE</span>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- LEFT SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- Config section -->
+    <div class="sidebar-section">
+      <div class="sidebar-header">⚙ Configuration</div>
+      <div class="sidebar-body">
+        <div class="field-group">
+          <label class="field-label">Subject Model <span style="color:var(--red)">(weak)</span></label>
+          <select id="subjectModel">
+            <option value="gpt-4o-mini" selected>gpt-4o-mini</option>
+            <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+            <option value="gpt-4o">gpt-4o</option>
+          </select>
+          <div class="model-badge weak">⚠ susceptible to pressure</div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Reinforcer Model <span style="color:var(--accent)">(strong)</span></label>
+          <select id="reinforcerModel">
+            <option value="gpt-4o" selected>gpt-4o</option>
+            <option value="gpt-4o-mini">gpt-4o-mini</option>
+          </select>
+          <div class="model-badge strong">⚡ relentless attacker</div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Evaluator Model</label>
+          <select id="evaluatorModel">
+            <option value="gpt-4o" selected>gpt-4o</option>
+            <option value="gpt-4o-mini">gpt-4o-mini</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Max Pressure Turns</label>
+          <input type="number" id="maxTurns" value="10" min="1" max="20">
+        </div>
+      </div>
+    </div>
+
+    <!-- Run button -->
+    <div style="padding:12px 16px; border-bottom:1px solid var(--border); flex-shrink:0;">
+      <button class="btn-run" id="runBtn" onclick="startExperiment()">▶ Run Experiment</button>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress-section sidebar-section" id="progressSection" style="display:none;">
+      <div class="progress-label">
+        <span id="progressLabel">Running...</span>
+        <span id="progressPct">0%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </div>
+
+    <!-- Live stats -->
+    <div class="stats-grid sidebar-section" id="statsSection">
+      <div class="stat-card">
+        <div class="stat-value" id="statTotal" style="color:var(--accent)">—</div>
+        <div class="stat-label">Questions</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statHalluc" style="color:var(--red)">—</div>
+        <div class="stat-label">Hallucinated</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statRate" style="color:var(--yellow)">—</div>
+        <div class="stat-label">Hall. Rate</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statAvgHPT" style="color:var(--green)">—</div>
+        <div class="stat-label">Avg Turns</div>
+      </div>
+    </div>
+
+    <!-- Question nav -->
+    <div class="sidebar-header" style="flex-shrink:0;">📋 Questions</div>
+    <div class="q-list" id="qNavList"></div>
+
+  </div>
+
+  <!-- CENTER CHAT -->
+  <div class="chat-area">
+    <div class="q-context hidden" id="qContext">
+      <div class="q-info">
+        <div class="q-context-label">Current Question</div>
+        <div class="q-context-question" id="qContextQuestion"></div>
+      </div>
+      <div class="q-answers">
+        <div class="answer-pill correct">
+          <span class="answer-pill-label">Correct</span>
+          <span id="qContextCorrect"></span>
+        </div>
+        <div class="answer-pill false">
+          <span class="answer-pill-label">False Claim</span>
+          <span id="qContextFalse"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="chat-messages" id="chatMessages">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🧪</div>
+        <div class="empty-title">Hallucination Pressure Lab</div>
+        <div class="empty-sub">Configure your experiment, select questions, and hit Run to watch the pressure unfold in real time.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="right-panel">
+    <div class="panel-tabs">
+      <div class="panel-tab active" data-panel="sessions">Sessions</div>
+      <div class="panel-tab" data-panel="questions">Questions</div>
+    </div>
+
+    <!-- SESSIONS PANEL -->
+    <div class="panel-content active" id="panelSessions">
+      <div class="session-list" id="sessionList">
+        <div style="padding:20px; text-align:center; color:var(--text-dim); font-size:11px;">
+          No sessions yet. Run an experiment to save one.
+        </div>
+      </div>
+      <div class="session-detail" id="sessionDetail"></div>
+      <div class="session-actions">
+        <label class="btn-sm primary" style="cursor:pointer;">
+          ⬆ Upload
+          <input type="file" accept=".json" style="display:none;" onchange="uploadSession(this)">
+        </label>
+        <button class="btn-sm" onclick="refreshSessions()">↻ Refresh</button>
+      </div>
+    </div>
+
+    <!-- QUESTIONS PANEL -->
+    <div class="panel-content" id="panelQuestions">
+      <div class="questions-editor" id="questionsEditor">
+        <div class="add-q-form" id="addQForm">
+          <div style="font-family:var(--font-ui);font-size:11px;font-weight:700;color:var(--text);margin-bottom:4px;">Add Custom Question</div>
+          <div>
+            <label>Question</label>
+            <textarea id="newQ" rows="2" placeholder="Enter your question..."></textarea>
+          </div>
+          <div>
+            <label>Correct Answer</label>
+            <input type="text" id="newQCorrect" placeholder="The true answer">
+          </div>
+          <div>
+            <label>False Claim to Push</label>
+            <input type="text" id="newQFalse" placeholder="The lie to assert">
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <div style="flex:1;">
+              <label>Category</label>
+              <input type="text" id="newQCat" placeholder="e.g. Science">
+            </div>
+            <div style="flex:1;">
+              <label>Difficulty</label>
+              <select id="newQDiff">
+                <option value="Easy">Easy</option>
+                <option value="Medium" selected>Medium</option>
+                <option value="Hard">Hard</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn-sm primary" onclick="addCustomQuestion()">+ Add</button>
+            <button class="btn-sm" onclick="document.getElementById('addQForm').classList.remove('open')">Cancel</button>
+          </div>
+        </div>
+        <div id="qEditorItems"></div>
+      </div>
+      <div class="q-editor-actions">
+        <button class="btn-sm primary" onclick="document.getElementById('addQForm').classList.toggle('open')">+ New Question</button>
+        <button class="btn-sm" onclick="selectAllQuestions()">Select All</button>
+        <button class="btn-sm" onclick="deselectAllQuestions()">Deselect All</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════════
+let allQuestions = [];
+let selectedQuestions = new Set();
+let experimentRunning = false;
+let currentExpId = null;
+let stats = { total: 0, hallucinated: 0 };
+let questionResults = {};
+let currentQuestionIdx = -1;
+let typingIndicatorEl = null;
+
+// ═══════════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════════
+async function init() {
+  const res = await fetch('/api/questions/defaults');
+  allQuestions = await res.json();
+  allQuestions.forEach(q => selectedQuestions.add(q.id));
+  renderQuestionsEditor();
+  renderQNav();
+  refreshSessions();
+  setupPanelTabs();
+  setupTopTabs();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════════════════════════════
+function setupTopTabs() {
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+    });
+  });
+}
+
+function setupPanelTabs() {
+  document.querySelectorAll('.panel-tab').forEach(t => {
+    t.addEventListener('click', () => {
+      const panel = t.dataset.panel;
+      document.querySelectorAll('.panel-tab').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.panel-content').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      document.getElementById('panel' + panel.charAt(0).toUpperCase() + panel.slice(1)).classList.add('active');
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// QUESTIONS EDITOR
+// ═══════════════════════════════════════════════════════════════════════
+function renderQuestionsEditor() {
+  const container = document.getElementById('qEditorItems');
+  container.innerHTML = '';
+  allQuestions.forEach((q, i) => {
+    const checked = selectedQuestions.has(q.id);
+    const diffClass = q.difficulty.toLowerCase();
+    const item = document.createElement('div');
+    item.className = `q-editor-item${checked ? ' selected' : ''}`;
+    item.id = `qed_${q.id}`;
+    item.innerHTML = `
+      <div class="q-editor-header" onclick="toggleQExpand('${q.id}', this)">
+        <div class="q-editor-check ${checked ? 'checked' : ''}" onclick="toggleQSelect('${q.id}', event)"></div>
+        <div class="q-editor-title">${q.question}</div>
+        <span class="q-badge ${diffClass}">${q.difficulty}</span>
+        <span class="q-editor-expand">▼</span>
+      </div>
+      <div class="q-editor-body">
+        <label>Question</label>
+        <textarea rows="2" onchange="updateQuestion('${q.id}','question',this.value)">${q.question}</textarea>
+        <label>Correct Answer</label>
+        <textarea rows="2" onchange="updateQuestion('${q.id}','correct_answer',this.value)">${q.correct_answer}</textarea>
+        <label>False Claim to Push</label>
+        <textarea rows="2" onchange="updateQuestion('${q.id}','false_claim_hint',this.value)">${q.false_claim_hint}</textarea>
+        <label>Category</label>
+        <input type="text" value="${q.category || ''}" onchange="updateQuestion('${q.id}','category',this.value)">
+        <div style="display:flex;gap:6px;align-items:center;margin-top:4px;">
+          <button class="btn-sm" style="flex:1;" onclick="duplicateQuestion('${q.id}')">⧉ Duplicate</button>
+          <button class="btn-sm" style="flex:1;color:var(--red);border-color:rgba(242,90,90,0.3);" onclick="removeQuestion('${q.id}')">✕ Remove</button>
+        </div>
+      </div>
+    `;
+    container.appendChild(item);
+  });
+}
+
+function toggleQExpand(id, headerEl) {
+  const item = document.getElementById(`qed_${id}`);
+  item.classList.toggle('open');
+}
+
+function toggleQSelect(id, e) {
+  e.stopPropagation();
+  if (selectedQuestions.has(id)) {
+    selectedQuestions.delete(id);
+  } else {
+    selectedQuestions.add(id);
+  }
+  renderQuestionsEditor();
+  renderQNav();
+}
+
+function updateQuestion(id, field, value) {
+  const q = allQuestions.find(q => q.id === id);
+  if (q) q[field] = value;
+}
+
+function duplicateQuestion(id) {
+  const q = allQuestions.find(q => q.id === id);
+  if (!q) return;
+  const newQ = { ...q, id: 'custom_' + Date.now() };
+  allQuestions.push(newQ);
+  selectedQuestions.add(newQ.id);
+  renderQuestionsEditor();
+  renderQNav();
+  showToast('Question duplicated', 'success');
+}
+
+function removeQuestion(id) {
+  allQuestions = allQuestions.filter(q => q.id !== id);
+  selectedQuestions.delete(id);
+  renderQuestionsEditor();
+  renderQNav();
+}
+
+function addCustomQuestion() {
+  const q = document.getElementById('newQ').value.trim();
+  const correct = document.getElementById('newQCorrect').value.trim();
+  const falseClaim = document.getElementById('newQFalse').value.trim();
+  const cat = document.getElementById('newQCat').value.trim() || 'Custom';
+  const diff = document.getElementById('newQDiff').value;
+  if (!q || !correct || !falseClaim) { showToast('Please fill all fields', 'error'); return; }
+  const newQ = { id: 'custom_' + Date.now(), question: q, correct_answer: correct, false_claim_hint: falseClaim, category: cat, difficulty: diff };
+  allQuestions.push(newQ);
+  selectedQuestions.add(newQ.id);
+  ['newQ','newQCorrect','newQFalse','newQCat'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('addQForm').classList.remove('open');
+  renderQuestionsEditor();
+  renderQNav();
+  showToast('Question added!', 'success');
+}
+
+function selectAllQuestions() {
+  allQuestions.forEach(q => selectedQuestions.add(q.id));
+  renderQuestionsEditor();
+  renderQNav();
+}
+
+function deselectAllQuestions() {
+  selectedQuestions.clear();
+  renderQuestionsEditor();
+  renderQNav();
+}
+
+function renderQNav() {
+  const container = document.getElementById('qNavList');
+  const active = allQuestions.filter(q => selectedQuestions.has(q.id));
+  container.innerHTML = active.map((q, i) => {
+    const result = questionResults[i];
+    const diffClass = q.difficulty.toLowerCase();
+    let extraClass = '';
+    let badge = `<span class="q-badge ${diffClass}">${q.difficulty}</span>`;
+    if (result !== undefined) {
+      extraClass = result ? 'done-q hallucinated' : 'done-q held';
+      badge = result ? '<span style="color:var(--red);font-size:11px;">💥</span>' : '<span style="color:var(--green);font-size:11px;">🛡</span>';
+    }
+    return `<div class="q-item ${extraClass} ${currentQuestionIdx === i ? 'active-q' : ''}" onclick="scrollToQuestion(${i})">
+      <span class="q-num">${i+1}</span>
+      <span class="q-text">${q.question}</span>
+      ${badge}
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// EXPERIMENT
+// ═══════════════════════════════════════════════════════════════════════
+async function startExperiment() {
+  if (experimentRunning) { stopExperiment(); return; }
+  const questionsToRun = allQuestions.filter(q => selectedQuestions.has(q.id));
+  if (questionsToRun.length === 0) { showToast('Select at least one question!', 'error'); return; }
+
+  // Reset state
+  experimentRunning = true;
+  questionResults = {};
+  stats = { total: questionsToRun.length, hallucinated: 0 };
+  currentQuestionIdx = -1;
+
+  // UI
+  document.getElementById('emptyState')?.remove();
+  document.getElementById('chatMessages').innerHTML = '';
+  document.getElementById('runBtn').textContent = '⏹ Stop';
+  document.getElementById('runBtn').classList.add('running');
+  setStatus('running', 'RUNNING');
+  document.getElementById('progressSection').style.display = 'block';
+  document.getElementById('statTotal').textContent = questionsToRun.length;
+  document.getElementById('statHalluc').textContent = '0';
+  document.getElementById('statRate').textContent = '0%';
+  document.getElementById('statAvgHPT').textContent = '—';
+
+  renderQNav();
+
+  const config = {
+    questions: questionsToRun,
+    subject_model: document.getElementById('subjectModel').value,
+    reinforcer_model: document.getElementById('reinforcerModel').value,
+    evaluator_model: document.getElementById('evaluatorModel').value,
+    max_turns: parseInt(document.getElementById('maxTurns').value),
+  };
+
+  const res = await fetch('/api/experiment/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(config),
+  });
+  const { experiment_id } = await res.json();
+  currentExpId = experiment_id;
+  listenToStream(experiment_id);
+}
+
+function stopExperiment() {
+  // Signal backend to stop and save partial session
+  if (currentExpId) {
+    fetch(`/api/experiment/stop/${currentExpId}`, { method: 'POST' })
+      .then(() => showToast('Stop signal sent — saving partial session...', 'success'));
+  }
+  experimentRunning = false;
+  document.getElementById('runBtn').textContent = '▶ Run Experiment';
+  document.getElementById('runBtn').classList.remove('running');
+  setStatus('idle', 'IDLE');
+  removeTypingIndicator();
+}
+
+function listenToStream(expId) {
+  const es = new EventSource(`/api/experiment/stream/${expId}`);
+  es.onmessage = (e) => {
+    const event = JSON.parse(e.data);
+    handleEvent(event);
+    if (event.type === 'experiment_end' || event.type === 'timeout') {
+      es.close();
+      stopExperiment();
+      refreshSessions();
+    }
+  };
+  es.onerror = () => { es.close(); stopExperiment(); };
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// EVENT HANDLER
+// ═══════════════════════════════════════════════════════════════════════
+const confidenceHistory = {};
+
+function handleEvent(event) {
+  switch (event.type) {
+
+    case 'question_start':
+      currentQuestionIdx = event.data.index;
+      addQDivider(event.data);
+      updateQContext(event.data);
+      updateProgress(event.data.index, event.data.total);
+      renderQNav();
+      break;
+
+    case 'turn_start':
+      showTypingIndicator(`Reinforcer preparing attack #${event.data.turn}...`);
+      break;
+
+    case 'agent_message':
+      removeTypingIndicator();
+      addMessage(event.data);
+      if (event.data.agent === 'subject') {
+        showTypingIndicator('Evaluator judging...');
+      } else if (event.data.agent === 'reinforcer') {
+        showTypingIndicator('Critic reviewing...');
+      } else if (event.data.agent === 'critic') {
+        showTypingIndicator('Subject responding...');
+      }
+      break;
+
+    case 'evaluation':
+      removeTypingIndicator();
+      addEvaluation(event.data);
+      const qKey = currentQuestionIdx;
+      if (!confidenceHistory[qKey]) confidenceHistory[qKey] = [];
+      confidenceHistory[qKey].push(event.data.confidence);
+      if (event.data.verdict !== 'HALLUCINATION') {
+        showTypingIndicator('Processing next turn...');
+      }
+      break;
+
+    case 'hallucination_detected':
+      removeTypingIndicator();
+      addHallucinationBanner(event.data);
+      questionResults[currentQuestionIdx] = true;
+      stats.hallucinated++;
+      updateStats();
+      renderQNav();
+      break;
+
+    case 'question_end':
+      removeTypingIndicator();
+      if (!event.data.hallucinated) {
+        addHeldGroundBanner(event.data);
+        questionResults[currentQuestionIdx] = false;
+      }
+      updateProgress(currentQuestionIdx + 1, stats.total);
+      renderQNav();
+      break;
+
+    case 'experiment_end':
+      removeTypingIndicator();
+      updateStats(event.data);
+      addExperimentSummary(event.data);
+      document.getElementById('qContext').classList.add('hidden');
+      break;
+
+    case 'session_saved':
+      showToast(`Session saved: ${event.data.filename}`, 'success');
+      break;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CHAT RENDERING
+// ═══════════════════════════════════════════════════════════════════════
+const agentEmoji = { subject: '🤖', reinforcer: '🗡', critic: '📚', evaluator: '⚖' };
+const agentLabel = { subject: 'Subject', reinforcer: 'Reinforcer', critic: 'Critic', evaluator: 'Evaluator' };
+
+function addMessage(data) {
+  const chat = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = `msg-group ${data.agent}`;
+  div.id = `msg_${data.agent}_${data.turn}`;
+
+  const toolsHtml = data.tools && data.tools.length > 0 ? `
+    <div class="tool-calls">
+      ${data.tools.map((t, i) => `
+        <span class="tool-chip" onclick="toggleTool(this, ${JSON.stringify(t.result || '').replace(/'/g,"&apos;")})">
+          🔧 ${t.name}
+        </span>
+      `).join('')}
+    </div>
+    <div class="tool-detail"></div>
+  ` : '';
+
+  div.innerHTML = `
+    <div class="msg-header">
+      <span class="agent-tag ${data.agent}">${agentEmoji[data.agent]} ${agentLabel[data.agent]}</span>
+      <span class="turn-badge">Turn ${data.turn}</span>
+    </div>
+    <div class="msg-bubble">
+      ${escapeHtml(data.text)}
+      ${toolsHtml}
+    </div>
+  `;
+  chat.appendChild(div);
+  scrollChat();
+}
+
+function toggleTool(el, result) {
+  const detail = el.closest('.msg-bubble').querySelector('.tool-detail');
+  if (!detail) return;
+  if (detail.style.display === 'block') {
+    detail.style.display = 'none';
+  } else {
+    detail.textContent = result || 'No result';
+    detail.style.display = 'block';
+  }
+}
+
+function addEvaluation(data) {
+  const chat = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'msg-group evaluator';
+
+  const conf = data.confidence;
+  const fillClass = conf >= 0.7 ? 'high' : conf >= 0.4 ? 'mid' : 'low';
+  const verdictEmoji = data.verdict === 'HALLUCINATION' ? '🔴' : data.verdict === 'PARTIAL_CAPITULATION' ? '🟡' : '🟢';
+  const trendArrow = conf < 0.8 ? '📉' : '➡️';
+
+  div.innerHTML = `
+    <div class="msg-header">
+      <span class="agent-tag evaluator">⚖ Evaluator</span>
+      <span class="turn-badge">Turn ${data.turn}</span>
+    </div>
+    <div class="eval-bubble">
+      <div class="verdict-icon">${verdictEmoji}</div>
+      <div class="eval-details">
+        <div class="eval-verdict ${data.verdict}">${data.verdict.replace(/_/g,' ')}</div>
+        <div class="eval-reasoning">${escapeHtml(data.reasoning)}</div>
+        <div class="eval-meta">
+          <div class="conf-bar-wrap">
+            <div class="conf-bar-label">Confidence ${trendArrow} ${(conf * 100).toFixed(0)}%</div>
+            <div class="conf-bar">
+              <div class="conf-fill ${fillClass}" style="width:${conf * 100}%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  chat.appendChild(div);
+  scrollChat();
+}
+
+function addHallucinationBanner(data) {
+  const chat = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'hallucination-banner';
+  div.innerHTML = `
+    <div class="hb-icon">💥</div>
+    <div class="hb-text">
+      <div class="hb-title">HALLUCINATION INDUCED — Turn ${data.turn}</div>
+      <div class="hb-detail">Subject claimed: "${escapeHtml(data.subject_claimed || '')}"</div>
+      ${data.deviation ? `<div class="hb-detail">Deviation: ${escapeHtml(data.deviation)}</div>` : ''}
+    </div>
+  `;
+  chat.appendChild(div);
+  scrollChat();
+}
+
+function addHeldGroundBanner(data) {
+  const chat = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'held-banner';
+  div.innerHTML = `
+    <div class="hb-icon">🛡</div>
+    <div class="hb-text">
+      <div class="hb-title">HELD GROUND — survived all ${data.hpt?.toString().replace('>','')} pressure turns</div>
+    </div>
+  `;
+  chat.appendChild(div);
+  scrollChat();
+}
+
+function addQDivider(data) {
+  const chat = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'q-divider';
+  div.innerHTML = `
+    <div class="q-divider-line"></div>
+    <div class="q-divider-label">Q${data.index + 1} / ${data.total} · ${data.category || 'General'} · ${data.difficulty || 'Medium'}</div>
+    <div class="q-divider-line"></div>
+  `;
+  chat.appendChild(div);
+
+  const qDiv = document.createElement('div');
+  qDiv.style.cssText = 'font-size:12px;color:var(--text);margin-bottom:8px;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;';
+  qDiv.innerHTML = `<span style="color:var(--text-dim);font-size:10px;font-family:var(--font-ui);font-weight:700;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:3px;">Question</span>${escapeHtml(data.question)}`;
+  chat.appendChild(qDiv);
+  scrollChat();
+}
+
+function addExperimentSummary(data) {
+  const chat = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.style.cssText = 'margin-top:20px;padding:16px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;';
+  const rate = (data.hallucination_rate * 100).toFixed(0);
+  const rateColor = rate > 50 ? 'var(--red)' : rate > 0 ? 'var(--yellow)' : 'var(--green)';
+  div.innerHTML = `
+    <div style="font-family:var(--font-ui);font-size:14px;font-weight:800;color:var(--text);margin-bottom:12px;">📊 Experiment Complete</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+      ${[
+        ['Tested', data.total_questions, 'var(--accent)'],
+        ['Hallucinated', data.hallucinations, 'var(--red)'],
+        ['Hall. Rate', rate + '%', rateColor],
+        ['Avg Turns', data.average_hpt ?? 'N/A', 'var(--yellow)'],
+      ].map(([label, val, color]) => `
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center;">
+          <div style="font-family:var(--font-ui);font-size:18px;font-weight:800;color:${color};">${val}</div>
+          <div style="font-size:9px;color:var(--text-dim);font-family:var(--font-ui);text-transform:uppercase;letter-spacing:0.1em;">${label}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div style="font-size:10px;color:var(--text-dim);text-align:right;font-family:var(--font-ui);">
+      Subject: ${data.subject_model} · Reinforcer: ${data.reinforcer_model}
+    </div>
+  `;
+  chat.appendChild(div);
+  scrollChat();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TYPING INDICATOR
+// ═══════════════════════════════════════════════════════════════════════
+function showTypingIndicator(label) {
+  removeTypingIndicator();
+  const chat = document.getElementById('chatMessages');
+  typingIndicatorEl = document.createElement('div');
+  typingIndicatorEl.className = 'typing-indicator';
+  typingIndicatorEl.id = 'typingIndicator';
+  typingIndicatorEl.innerHTML = `
+    <div class="typing-dots">
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+    </div>
+    <span class="typing-label">${label}</span>
+  `;
+  chat.appendChild(typingIndicatorEl);
+  scrollChat();
+}
+
+function removeTypingIndicator() {
+  const el = document.getElementById('typingIndicator');
+  if (el) el.remove();
+  typingIndicatorEl = null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════════════════════
+function updateQContext(data) {
+  const ctx = document.getElementById('qContext');
+  ctx.classList.remove('hidden');
+  document.getElementById('qContextQuestion').textContent = data.question;
+  document.getElementById('qContextCorrect').textContent = data.correct_answer?.substring(0, 60) + (data.correct_answer?.length > 60 ? '...' : '');
+  document.getElementById('qContextFalse').textContent = data.false_claim?.substring(0, 60) + (data.false_claim?.length > 60 ? '...' : '');
+}
+
+function updateProgress(current, total) {
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressPct').textContent = pct + '%';
+  document.getElementById('progressLabel').textContent = `Q${current}/${total}`;
+}
+
+function updateStats(data) {
+  document.getElementById('statHalluc').textContent = stats.hallucinated;
+  const rate = stats.total > 0 ? Math.round((stats.hallucinated / stats.total) * 100) : 0;
+  document.getElementById('statRate').textContent = rate + '%';
+  if (data?.average_hpt) {
+    document.getElementById('statAvgHPT').textContent = data.average_hpt;
+  }
+}
+
+function setStatus(state, label) {
+  const pill = document.getElementById('statusPill');
+  pill.className = 'status-pill ' + state;
+  document.getElementById('statusText').textContent = label;
+}
+
+function scrollChat() {
+  const chat = document.getElementById('chatMessages');
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function scrollToQuestion(idx) {
+  const dividers = document.querySelectorAll('.q-divider');
+  if (dividers[idx]) dividers[idx].scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/\n/g,'<br>');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SESSIONS
+// ═══════════════════════════════════════════════════════════════════════
+let sessions = [];
+
+async function refreshSessions() {
+  const res = await fetch('/api/sessions');
+  sessions = await res.json();
+  renderSessionList();
+}
+
+function renderSessionList() {
+  const container = document.getElementById('sessionList');
+  container.classList.remove('hidden');
+  document.getElementById('sessionDetail').classList.remove('active');
+
+  if (sessions.length === 0) {
+    container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:11px;">No sessions yet.</div>';
+    return;
+  }
+
+  container.innerHTML = sessions.map(s => {
+    const rate = s.summary?.hallucination_rate;
+    const rateClass = rate > 0.5 ? 'rate-high' : 'rate-low';
+    const rateText = rate !== undefined ? (rate * 100).toFixed(0) + '% hall.' : '?%';
+    const d = new Date(s.datetime);
+    const dateStr = isNaN(d) ? s.timestamp : d.toLocaleString();
+    const subject = s.config?.subject_model || '?';
+    const reinforcer = s.config?.reinforcer_model || '?';
+    return `
+      <div class="session-card" onclick="openSession('${s.filename}')">
+        <div class="session-date">
+          <span>${dateStr}</span>
+          <button class="session-delete" onclick="deleteSession('${s.filename}', event)">✕</button>
+        </div>
+        <div class="session-models">
+          <span>${subject}</span> <span style="color:var(--text-dim)">vs</span> <span>${reinforcer}</span>
+        </div>
+        <div class="session-stats">
+          <span class="session-stat ${rateClass}">${rateText}</span>
+          <span class="session-stat info">${s.summary?.total_questions ?? '?'} questions</span>
+          <span class="session-stat info">${s.config?.max_turns ?? '?'} turns</span>
+          ${s.summary?.partial ? '<span class="session-stat" style="background:rgba(245,166,35,0.12);color:var(--yellow);">⏹ partial</span>' : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function openSession(filename) {
+  const res = await fetch(`/api/sessions/${filename}`);
+  const session = await res.json();
+  renderSessionDetail(session, filename);
+}
+
+function renderSessionDetail(session, filename) {
+  const list = document.getElementById('sessionList');
+  const detail = document.getElementById('sessionDetail');
+  list.classList.add('hidden');
+  detail.classList.add('active');
+
+  const s = session.summary || {};
+  const rate = (s.hallucination_rate * 100).toFixed(0);
+  const rateColor = rate > 50 ? 'var(--red)' : rate > 0 ? 'var(--yellow)' : 'var(--green)';
+
+  detail.innerHTML = `
+    <div class="back-btn" onclick="renderSessionList()">← Back to Sessions</div>
+    <div class="session-detail-summary">
+      <div style="font-family:var(--font-ui);font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px;">${new Date(session.datetime).toLocaleString()}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+        ${[
+          ['Subject', s.subject_model, 'var(--red)'],
+          ['Reinforcer', s.reinforcer_model, 'var(--accent)'],
+          ['Evaluator', s.evaluator_model, 'var(--yellow)'],
+          ['Max Turns', s.max_turns, 'var(--text)'],
+          ['Hallucinated', s.hallucinations + '/' + s.total_questions, 'var(--red)'],
+          ['Hall. Rate', rate + '%', rateColor],
+        ].map(([label, val, color]) => `
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px;">
+            <div style="font-size:9px;color:var(--text-dim);font-family:var(--font-ui);text-transform:uppercase;letter-spacing:0.1em;">${label}</div>
+            <div style="color:${color};font-size:11px;font-weight:600;margin-top:2px;">${val ?? '—'}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-sm primary" onclick="loadSessionIntoChat('${filename}')">▶ Replay in Chat</button>
+        <button class="btn-sm" onclick="exportSession('${filename}')">⬇ Export JSON</button>
+      </div>
+    </div>
+    <div style="font-family:var(--font-ui);font-size:9px;font-weight:700;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px;">Per-Question Results</div>
+    <div class="session-q-results">
+      ${(s.results || []).map((r, i) => `
+        <div class="session-q-result">
+          <div class="session-q-result-header">
+            <span>${r.hallucinated ? '💥' : '🛡'}</span>
+            <span style="font-family:var(--font-ui);font-size:10px;font-weight:700;color:${r.hallucinated ? 'var(--red)':'var(--green)'};">${r.hallucinated ? 'HALLUCINATED at T'+r.hallucinated_at_turn : 'HELD GROUND'}</span>
+            <span style="font-size:9px;color:var(--text-dim);">${r.category || ''}</span>
+          </div>
+          <div class="session-q-result-question">${r.question}</div>
+          ${r.hallucinated ? `<div style="font-size:10px;color:var(--text-dim);margin-top:3px;">Turns to break: ${r.hallucinated_at_turn}</div>` : ''}
+          <div style="margin-top:6px;">
+            <div class="mini-chart">
+              ${(r.evaluation_log || []).map(e => {
+                const h = Math.max(4, e.confidence * 28);
+                const c = e.confidence >= 0.7 ? '#22d3a0' : e.confidence >= 0.4 ? '#f5a623' : '#f25a5a';
+                return `<div class="mini-bar" style="height:${h}px;background:${c};" title="T${e.turn}: ${(e.confidence*100).toFixed(0)}%"></div>`;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function loadSessionIntoChat(filename) {
+  const res = await fetch(`/api/sessions/${filename}`);
+  const session = await res.json();
+  const chat = document.getElementById('chatMessages');
+  chat.innerHTML = '';
+  document.getElementById('emptyState')?.remove();
+
+  const grouped = {};
+  (session.messages || []).forEach(m => {
+    const key = `${m.q_idx}_${m.turn}_${m.agent}`;
+    grouped[key] = m;
+  });
+
+  let lastQIdx = -1;
+  (session.messages || []).forEach(m => {
+    if (m.q_idx !== lastQIdx) {
+      lastQIdx = m.q_idx;
+      const q = session.questions?.[m.q_idx];
+      if (q) {
+        addQDivider({ index: m.q_idx, total: session.questions.length, category: q.category || '', difficulty: q.difficulty || '', question: q.question });
+      }
+    }
+    addMessage({ agent: m.agent, turn: m.turn, text: m.text, tools: m.tools || [] });
+  });
+
+  (session.summary?.results || []).forEach(r => {
+    if (r.hallucinated) addHallucinationBanner({ turn: r.hallucinated_at_turn, subject_claimed: '' });
+    else addHeldGroundBanner({ hpt: r.hpt });
+    (r.evaluation_log || []).forEach(ev => addEvaluation(ev));
+  });
+
+  addExperimentSummary(session.summary);
+  showToast('Session loaded into chat view', 'success');
+  renderSessionList();
+}
+
+async function deleteSession(filename, e) {
+  e.stopPropagation();
+  await fetch(`/api/sessions/${filename}`, { method: 'DELETE' });
+  showToast('Session deleted', 'success');
+  refreshSessions();
+}
+
+async function exportSession(filename) {
+  window.open(`/api/sessions/${filename}`, '_blank');
+}
+
+async function uploadSession(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api/sessions/upload', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (data.error) { showToast(data.error, 'error'); return; }
+  showToast(data.message, 'success');
+  refreshSessions();
+  input.value = '';
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════════════════
+function showToast(message, type = 'info') {
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════════════════
+init();
+</script>
+</body>
+</html>
