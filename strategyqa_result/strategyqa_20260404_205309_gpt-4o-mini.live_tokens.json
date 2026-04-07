@@ -1,0 +1,36 @@
+{
+  "session": {
+    "prompt_tokens": 21236118,
+    "completion_tokens": 4677384,
+    "total_tokens": 25913502,
+    "total_calls": 26849
+  },
+  "per_model": {
+    "gpt-4o-mini": {
+      "prompt": 9971063,
+      "completion": 3088257,
+      "total": 13059320,
+      "calls": 15478
+    },
+    "gpt-4o": {
+      "prompt": 11265055,
+      "completion": 1589127,
+      "total": 12854182,
+      "calls": 11371
+    }
+  },
+  "per_role": {
+    "subject": {
+      "prompt": 9971063,
+      "completion": 3088257,
+      "total": 13059320,
+      "calls": 15478
+    },
+    "attacker": {
+      "prompt": 11265055,
+      "completion": 1589127,
+      "total": 12854182,
+      "calls": 11371
+    }
+  }
+}

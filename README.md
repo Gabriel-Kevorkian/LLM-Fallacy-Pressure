@@ -62,7 +62,7 @@ OPENAI_API_KEY=sk-...your-key-here...
 
 ### Web UI (recommended)
 ```bash
-python app.py
+python strategy_qa.py
 ```
 Then open **http://localhost:5000** in your browser.
 
