@@ -1,6 +1,6 @@
 # Fallacy Under Pressure: Benchmarking LLM Susceptibility to Adversarial Logical Fallacies
 
-A two-agent adversarial framework that systematically measures how susceptible large language models are to logical fallacies. A **Subject** model answers questions while an **Attacker** model applies structured, escalating fallacy-based pressure to induce hallucinations or flip answers. Two datasets are tested: **StrategyQA** (yes/no factual reasoning) and **GSM8K / SVAMP** (math word problems).
+A two-agent adversarial framework that systematically measures how susceptible large language models are to logical fallacies. A **Subject** model answers questions while an **Attacker** model applies structured, escalating fallacy-based pressure to induce hallucinations or flip answers. Two datasets are tested: **StrategyQA** (yes/no factual reasoning) and **SVAMP** (math word problems).
 
 ---
 
